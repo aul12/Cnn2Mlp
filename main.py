@@ -8,58 +8,79 @@ import numpy as np
 import xml.etree.ElementTree as et
 from tensorflow.python import pywrap_tensorflow
 
-def conv2dense(kernel, bias):
-    #TODO create weight and bias matrices and flatten them
-    #TODO the input sizes need to be asked from the user probably
-    return kernel, bias
+size_map = dict(conv2d=(80, 80, 3), conv2d_1=(40, 40, 32), conv2d_2=(20, 20, 64))
+
+
+# kernel \in R^{width height channels filters}
+def conv2dense(kernel, bias, input_size, stride):
+    input_size_flat = input_size[0] * input_size[1] * input_size[2]
+    output_size_flat = (input_size[0] // stride) * (input_size[1] // stride) * kernel.shape[3]
+    weights = np.zeros((input_size_flat, output_size_flat))
+
+    for f in range(0, kernel.shape[2]):
+        for chi in range(0, input_size[0], stride):
+            for upsilon in range(0, input_size[1], stride):
+                kx = (kernel.shape[0] - 1) // 2
+                ky = (kernel.shape[1] - 1) // 2
+                w = np.zeros((input_size[0] // stride, input_size[1] // stride, kernel.shape[3]))
+                for c in range(0, kernel.shape[2]):
+                    for x in range(-kx, kx):
+                        for y in range(-ky, ky):
+                            ix = chi//stride + x
+                            iy = upsilon//stride + y
+                            if 0 <= ix < w.shape[0] and 0 <= iy < w.shape[1]:
+                                w[ix][iy][c] = kernel[x + kx][y + ky][c][f]
+                w_flat = np.reshape(w, -1)
+                index = f * input_size[0] * input_size[1] + chi * input_size[1] + upsilon
+                weights[index] = w_flat
+
+    bias_vect = np.zeros(output_size_flat)
+    per_bias_count = (input_size[0]//stride)*(input_size[1]//stride)
+    for i in range(0, bias.shape[0]):
+        for c in range(0, per_bias_count):
+            bias_vect[c+i*per_bias_count] = bias[i]
+
+    return weights, bias_vect
+
 
 def get_order(layers_map):
-    #TODO request order via input()
+    print("Retrieving order...")
+    ret = list()
+    for key in sorted(layers_map):
+        ret.append(layers_map[key])
+    print("...finished!")
+    return ret
+
 
 def map_layers(matrixes):
+    print("Mapping layers...")
     num_of_layers = int(len(matrixes) / 2)
-    print("Assuming that the MLP consists of %d layers" % num_of_layers)
+    print("Assuming that the net consists of %d layers" % num_of_layers)
     layer_names = set()
-    for name,_ in matrixes.items():
+    for name, _ in matrixes.items():
         layer_name = name.split("/", 1)[0]
         layer_names.add(layer_name)
-    print(layer_names)
 
     layers_map = dict()
     for layer_name in layer_names:
-        kernel = matrixes[layer_name+"/kernel"]
-        bias = matrixes[layer_name+"/bias"]
+        kernel = matrixes[layer_name + "/kernel"]
+        bias = matrixes[layer_name + "/bias"]
         if "conv" in layer_name:
-            kernel, bias = conv2dense(kernel, bias)
+            kernel, bias = conv2dense(kernel, bias, size_map[layer_name], 3)
         layers_map[layer_name] = (kernel, bias)
 
+    print("...finished!")
     return get_order(layers_map)
 
+
 def save_to_opencv(layers, output_file_name):
+    print("Saving to opencv...")
     layer_sizes_text = ""
     input_scale_text = ""
     output_scale_text = ""
-    weights_text = list()
 
-    for layer in layers:
-        weight, bias = layer
-        weight, _ = weight
-        bias, _ = bias
-
-        layer_sizes_text += str(weight.shape[0]) + " "
-
-        w = np.transpose(np.array(weight))
-        b = np.transpose(np.array([bias]))
-        homogeneous = np.concatenate((w, b), axis=1)
-        flattened = homogeneous.flatten('C')
-        weight_text = ""
-        for c in range(0, len(flattened)):
-            weight_text += str(flattened[c])
-            weight_text += "\n" if c % 2 != 0 else " "
-        weights_text.append(weight_text)
-
-    output_size = layers[len(layers) - 1][0][0].shape[1]
-    input_size = layers[0][0][0].shape[0]
+    output_size = layers[len(layers) - 1][0].shape[1]
+    input_size = layers[0][0].shape[0]
 
     layer_sizes_text += str(output_size)
 
@@ -69,6 +90,7 @@ def save_to_opencv(layers, output_file_name):
     for _ in range(0, output_size):
         output_scale_text += "1. 0. "
 
+    print("...building xml...")
     root = et.Element("opencv_storage")
     mlp = et.SubElement(root, "opencv_ml_ann_mlp")
     format = et.SubElement(mlp, "format")
@@ -112,11 +134,24 @@ def save_to_opencv(layers, output_file_name):
     input_scale.text = input_scale_text
     output_scale.text = output_scale_text
     inv_output_scale.text = output_scale_text
-    for c in range(0, len(layers)):
-        layer_weights[c].text = weights_text[c]
 
+    print("...writing matrices...")
+    for c in range(0, len(layers)):
+        weight, bias = layers[c]
+
+        layer_sizes_text += str(weight.shape[0]) + " "
+
+        w = np.transpose(np.array(weight))
+        b = np.transpose(np.array([bias]))
+        homogeneous = np.concatenate((w, b), axis=1)
+        flattened = homogeneous.flatten('C')
+
+        layer_weights[c].text = ' '.join(flattened)
+
+    print("...saving...")
     file = open(output_file_name, "wb")
     et.ElementTree(root).write(file)
+    print("...finished!")
 
 
 def main():
@@ -133,9 +168,8 @@ def main():
     weights = dict()
     for key in sorted(var_to_shape_map):
         weights[key] = reader.get_tensor(key)
-        print("%s (%s)" % (key, str(reader.get_tensor(key).shape)))
     layers = map_layers(weights)
-    #save_to_opencv(layers, output_file)
+    save_to_opencv(layers, output_file)
 
 
 if __name__ == "__main__":
