@@ -26,8 +26,8 @@ def conv2dense(kernel, bias, input_size, stride):
                 for c in range(0, kernel.shape[2]):
                     for x in range(-kx, kx):
                         for y in range(-ky, ky):
-                            ix = chi//stride + x
-                            iy = upsilon//stride + y
+                            ix = chi // stride + x
+                            iy = upsilon // stride + y
                             if 0 <= ix < w.shape[0] and 0 <= iy < w.shape[1]:
                                 w[ix][iy][c] = kernel[x + kx][y + ky][c][f]
                 w_flat = np.reshape(w, -1)
@@ -35,10 +35,10 @@ def conv2dense(kernel, bias, input_size, stride):
                 weights[index] = w_flat
 
     bias_vect = np.zeros(output_size_flat)
-    per_bias_count = (input_size[0]//stride)*(input_size[1]//stride)
+    per_bias_count = (input_size[0] // stride) * (input_size[1] // stride)
     for i in range(0, bias.shape[0]):
         for c in range(0, per_bias_count):
-            bias_vect[c+i*per_bias_count] = bias[i]
+            bias_vect[c + i * per_bias_count] = bias[i]
 
     return weights, bias_vect
 
@@ -81,6 +81,10 @@ def save_to_opencv(layers, output_file_name):
 
     output_size = layers[len(layers) - 1][0].shape[1]
     input_size = layers[0][0].shape[0]
+
+    for c in range(0, len(layers)):
+        weight, bias = layers[c]
+        layer_sizes_text += str(weight.shape[0]) + " "
 
     layer_sizes_text += str(output_size)
 
@@ -135,22 +139,29 @@ def save_to_opencv(layers, output_file_name):
     output_scale.text = output_scale_text
     inv_output_scale.text = output_scale_text
 
+    for c in range(0, len(layers)):
+        layer_weights[c].text = "__SPLIT__"
+
+    print("...splitting...")
+    xml_str = et.tostring(root, encoding='utf8', method='xml')
+    parts = str(xml_str).split("__SPLIT__")
+    for c in range(0, len(parts)):
+        file = open("part_%02d.xml" % (c * 2), "w")
+        file.write(parts[c])
+        file.close()
+
     print("...writing matrices...")
     for c in range(0, len(layers)):
         weight, bias = layers[c]
+        homogeneous = np.concatenate((weight, [bias]), axis=0)
+        flattened = homogeneous.flatten('A')
 
-        layer_sizes_text += str(weight.shape[0]) + " "
+        print("w")
+        file = open("part_%02d.xml" % (c * 2 + 1), "w")
+        for w in flattened:
+            file.write("%d " % w)
+        file.close()
 
-        w = np.transpose(np.array(weight))
-        b = np.transpose(np.array([bias]))
-        homogeneous = np.concatenate((w, b), axis=1)
-        flattened = homogeneous.flatten('C')
-
-        layer_weights[c].text = ' '.join(flattened)
-
-    print("...saving...")
-    file = open(output_file_name, "wb")
-    et.ElementTree(root).write(file)
     print("...finished!")
 
 
