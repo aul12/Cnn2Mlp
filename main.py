@@ -61,14 +61,36 @@ def map_layers(matrixes):
         layer_name = name.split("/", 1)[0]
         layer_names.add(layer_name)
 
+    weights_cnn = 0
+    weights_mlp = 0
+
     layers_map = dict()
     for layer_name in layer_names:
         kernel = matrixes[layer_name + "/kernel"]
         bias = matrixes[layer_name + "/bias"]
+
         if "conv" in layer_name:
+            weights_for_kernel = 1
+            weights_for_bias = 1
+            for s in kernel.shape:
+                weights_for_kernel *= s
+            for s in bias.shape:
+                weights_for_bias *= s
+            weights_cnn += weights_for_bias + weights_for_kernel
+
             kernel, bias = conv2dense(kernel, bias, size_map[layer_name], 3)
+
+            weights_for_kernel = 1
+            weights_for_bias = 1
+            for s in kernel.shape:
+                weights_for_kernel *= s
+            for s in bias.shape:
+                weights_for_bias *= s
+            weights_mlp += weights_for_bias + weights_for_kernel
+
         layers_map[layer_name] = (kernel, bias)
 
+    print("Weights CNN: %d\tWeights MLP: %d" % (weights_cnn, weights_mlp))
     print("...finished!")
     return get_order(layers_map)
 
