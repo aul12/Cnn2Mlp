@@ -95,7 +95,7 @@ def map_layers(matrixes):
     return get_order(layers_map)
 
 
-def save_to_opencv(layers, output_file_name):
+def save_to_opencv(layers):
     print("Saving to opencv...")
     layer_sizes_text = ""
     input_scale_text = ""
@@ -188,12 +188,11 @@ def save_to_opencv(layers, output_file_name):
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("usage: main.py model.ckpt output.xml")
+    if len(sys.arg) != 2:
+        print("usage: main.py model.ckpt")
         exit(1)
 
     checkpoint_file = sys.argv[1]
-    output_file = sys.argv[2]
 
     reader = pywrap_tensorflow.NewCheckpointReader(checkpoint_file)
 
@@ -202,7 +201,7 @@ def main():
     for key in sorted(var_to_shape_map):
         weights[key] = reader.get_tensor(key)
     layers = map_layers(weights)
-    save_to_opencv(layers, output_file)
+    save_to_opencv(layers)
 
 
 if __name__ == "__main__":
